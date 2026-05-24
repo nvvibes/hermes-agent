@@ -228,6 +228,10 @@ def _prepare_gateway_status_message(platform: Any, event_type: str, message: str
     if not text:
         return None
     if _gateway_platform_value(platform) != "telegram":
+        # Apply the same infra-noise filter as Telegram: suppress retry/
+        # rate-limit/auxiliary-failure messages from reaching Discord/etc.
+        if _TELEGRAM_NOISY_STATUS_RE.search(text):
+            return None
         return text
 
     text = _redact_gateway_user_facing_secrets(text)
@@ -17054,9 +17058,9 @@ class GatewayRunner:
         # Periodic "still working" notifications for long-running tasks.
         # Fires every N seconds so the user knows the agent hasn't died.
         # Config: agent.gateway_notify_interval in config.yaml, or
-        # HERMES_AGENT_NOTIFY_INTERVAL env var.  Default 180s (3 min).
+        # HERMES_AGENT_NOTIFY_INTERVAL env var.  Default 0s (disabled).
         # 0 = disable notifications.
-        _NOTIFY_INTERVAL_RAW = _float_env("HERMES_AGENT_NOTIFY_INTERVAL", 180)
+        _NOTIFY_INTERVAL_RAW = _float_env("HERMES_AGENT_NOTIFY_INTERVAL", 0)
         _NOTIFY_INTERVAL = _NOTIFY_INTERVAL_RAW if _NOTIFY_INTERVAL_RAW > 0 else None
         _notify_start = time.time()
 
