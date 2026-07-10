@@ -1822,17 +1822,25 @@ _PLAINTEXT_GATEWAY_RESTART_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^(?:please\s+)?restart\s+hermes[.!?\s]*$", re.IGNORECASE),
 )
 
+_BANG_SESSION_RESET_COMMANDS: dict[str, str] = {
+    "!clear": "/new",
+    "!reset": "/new",
+    "!new": "/new",
+}
+
 
 def coerce_plaintext_gateway_command(event: "MessageEvent") -> None:
-    """Rewrite a tiny set of DM plaintext admin phrases into slash commands.
+    """Rewrite narrow plaintext operational commands into slash commands.
 
-    This keeps high-impact operational phrases like ``restart gateway`` out of
-    the LLM/tool path, where they can trigger a self-restart from inside the
-    currently running agent and leave the gateway stuck in ``draining`` while it
-    waits for that same agent to finish.
+    ``!clear`` is intentionally accepted on all gateway chat types, not just
+    DMs. Some chat surfaces (notably Mattermost group channels) reserve typed
+    slash commands for the platform, so Stuart uses ``!clear`` as the practical
+    reset command. It must route through the real ``/new`` handler so the
+    underlying Hermes session ID and history rotate instead of leaking into the
+    model as ordinary user text.
 
-    Scope is intentionally narrow: DM text messages only, exact restart-style
-    phrases only. Group chats keep natural-language semantics.
+    Restart-style natural-language phrases stay DM-only because they are broad
+    enough to be plausible conversation in groups.
     """
     try:
         if event is None or event.message_type != MessageType.TEXT:
@@ -1840,6 +1848,12 @@ def coerce_plaintext_gateway_command(event: "MessageEvent") -> None:
         text = (event.text or "").strip()
         if not text or text.startswith("/"):
             return
+
+        lowered = text.lower()
+        if lowered in _BANG_SESSION_RESET_COMMANDS:
+            event.text = _BANG_SESSION_RESET_COMMANDS[lowered]
+            return
+
         source = getattr(event, "source", None)
         if getattr(source, "chat_type", None) != "dm":
             return
