@@ -10,9 +10,11 @@ from gateway.platforms.base import (
     BasePlatformAdapter,
     GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE,
     MessageEvent,
+    MessageType,
     cache_audio_from_bytes,
     cache_image_from_bytes,
     cache_video_from_bytes,
+    coerce_plaintext_gateway_command,
     safe_url_for_log,
     utf16_len,
     validate_inbound_media_size,
@@ -20,6 +22,7 @@ from gateway.platforms.base import (
     _prefix_within_utf16_limit,
     cache_audio_from_bytes,
 )
+from gateway.session import Platform, SessionSource
 
 
 def test_media_delivery_denies_encrypted_bitwarden_cache(tmp_path, monkeypatch):
@@ -116,6 +119,37 @@ class TestMessageEventGetCommandArgs:
     def test_command_with_args(self):
         event = MessageEvent(text="/new session id 123")
         assert event.get_command_args() == "session id 123"
+
+
+class TestCoercePlaintextGatewayCommand:
+    @pytest.mark.parametrize("text", ["!clear", "!reset", "!new", " !CLEAR "])
+    def test_bang_reset_shorthand_maps_to_new_in_group_chat(self, text):
+        source = SessionSource(
+            platform=Platform.MATTERMOST,
+            chat_id="channel-1",
+            chat_type="group",
+        )
+        event = MessageEvent(text=text, source=source, message_type=MessageType.TEXT)
+
+        coerce_plaintext_gateway_command(event)
+
+        assert event.text == "/new"
+
+    def test_non_exact_bang_reset_text_is_not_rewritten(self):
+        source = SessionSource(
+            platform=Platform.MATTERMOST,
+            chat_id="channel-1",
+            chat_type="group",
+        )
+        event = MessageEvent(
+            text="please !clear this",
+            source=source,
+            message_type=MessageType.TEXT,
+        )
+
+        coerce_plaintext_gateway_command(event)
+
+        assert event.text == "please !clear this"
 
 
 # ---------------------------------------------------------------------------

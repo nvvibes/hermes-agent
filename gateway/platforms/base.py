@@ -2172,23 +2172,32 @@ _PLAINTEXT_GATEWAY_RESTART_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^(?:please\s+)?restart\s+hermes[.!?\s]*$", re.IGNORECASE),
 )
 
+_PLAINTEXT_GATEWAY_RESET_PATTERN = re.compile(
+    r"^!(?:clear|reset|new)\s*$",
+    re.IGNORECASE,
+)
+
 
 def coerce_plaintext_gateway_command(event: "MessageEvent") -> None:
-    """Rewrite a tiny set of DM plaintext admin phrases into slash commands.
+    """Rewrite exact plaintext control phrases into slash commands.
 
     This keeps high-impact operational phrases like ``restart gateway`` out of
     the LLM/tool path, where they can trigger a self-restart from inside the
     currently running agent and leave the gateway stuck in ``draining`` while it
     waits for that same agent to finish.
 
-    Scope is intentionally narrow: DM text messages only, exact restart-style
-    phrases only. Group chats keep natural-language semantics.
+    Bang reset shorthands are supported in every chat type because platforms
+    such as Mattermost reserve slash commands. Restart phrases remain limited
+    to DMs. All matches are exact so normal conversation is unchanged.
     """
     try:
         if event is None or event.message_type != MessageType.TEXT:
             return
         text = (event.text or "").strip()
         if not text or text.startswith("/"):
+            return
+        if _PLAINTEXT_GATEWAY_RESET_PATTERN.match(text):
+            event.text = "/new"
             return
         source = getattr(event, "source", None)
         if getattr(source, "chat_type", None) != "dm":
